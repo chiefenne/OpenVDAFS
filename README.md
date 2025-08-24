@@ -2,7 +2,7 @@
 
 > **🚧 Work in Progress** - This project is under active development.
 
-A Python library and CLI tool for reading, parsing, and visualizing VDA-FS (Verband der Automobilindustrie - Flächenschnittstelle) files, which are used in automotive CAD/CAM applications for surface and curve data exchange.
+A Python library and CLI tool for reading, parsing, and visualizing VDA-FS (Verband der Automobilindustrie - Flächenschnittstelle) files, which were used in automotive CAD/CAM applications for surface and curve data exchange.
 
 ## Features
 
