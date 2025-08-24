@@ -1,4 +1,4 @@
-# Tiny CLI: list names by type, plot by entity name.
+# Tiny VDAFS CLI: list names by type, plot by entity name.
 # Usage:
 #   python cli.py <file.vda> --list CURVE
 #   python cli.py <file.vda> --plot CV3
