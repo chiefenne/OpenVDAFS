@@ -1,23 +1,58 @@
 # Plotting helpers. One chart per call, no styles set.
 import matplotlib.pyplot as plt
+import math
 import curve_eval as ce
 import surf_eval as se
 
-def _plot_xyz_points(xyz, title=None):
+def _project_point(pt, projection='xy'):
+    x, y, z = pt
+    if projection == 'xy':
+        return (x, y)
+    if projection == 'xz':
+        return (x, z)
+    if projection == 'yz':
+        return (y, z)
+    if projection == 'iso':
+        # Isometric projection via Z-then-X rotations: Z 45°, then X 35.264°
+        alpha = math.radians(45.0)
+        beta = math.radians(35.26438968)
+        cosA, sinA = math.cos(alpha), math.sin(alpha)
+        cosB, sinB = math.cos(beta), math.sin(beta)
+        x1 = x * cosA - y * sinA
+        y1 = x * sinA + y * cosA
+        y2 = y1 * cosB - z * sinB
+        return (x1, y2)
+    # default fallback
+    return (x, y)
+
+def _axis_labels(projection='xy'):
+    if projection == 'xy':
+        return ('X', 'Y')
+    if projection == 'xz':
+        return ('X', 'Z')
+    if projection == 'yz':
+        return ('Y', 'Z')
+    if projection == 'iso':
+        return ("X'", "Y'")
+    return ('X', 'Y')
+
+def _plot_xyz_points(xyz, title=None, projection='xy'):
     if not xyz:
         raise ValueError("No points to plot.")
-    xs = [p[0] for p in xyz]
-    ys = [p[1] for p in xyz]
+    proj = [_project_point(p, projection) for p in xyz]
+    xs = [p[0] for p in proj]
+    ys = [p[1] for p in proj]
     plt.figure()
     plt.plot(xs, ys, marker='o')
     if title:
         plt.title(title)
-    plt.xlabel("X")
-    plt.ylabel("Y")
+    xl, yl = _axis_labels(projection)
+    plt.xlabel(xl)
+    plt.ylabel(yl)
     plt.axis('equal')
     plt.show()
 
-def plot_entity(model, idx, name, samples_per_segment=30):
+def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
     e = idx['by_name'].get(name)
     if not e:
         raise KeyError("No such entity: " + name)
@@ -33,7 +68,7 @@ def plot_entity(model, idx, name, samples_per_segment=30):
         for x in it:
             y = next(it); z = next(it)
             xyz.append((float(x), float(y), float(z)))
-        _plot_xyz_points(xyz, title=f"{e['name']} ({cmd})")
+        _plot_xyz_points(xyz, title=f"{e['name']} ({cmd})", projection=projection)
         return
 
     if cmd == 'CURVE':
@@ -47,15 +82,18 @@ def plot_entity(model, idx, name, samples_per_segment=30):
 
         # Plot each segment with a distinct color
         plt.figure()
+        cmap = plt.get_cmap('tab20', 20)
         for seg_idx, start, end in seg_ranges:
             seg_pts = pts[start:end]
-            xs = [p[0] for p in seg_pts]
-            ys = [p[1] for p in seg_pts]
-            color = plt.cm.tab20(seg_idx % 20)
+            proj = [_project_point(p, projection) for p in seg_pts]
+            xs = [p[0] for p in proj]
+            ys = [p[1] for p in proj]
+            color = cmap(seg_idx % 20)
             plt.plot(xs, ys, color=color)
         plt.title(f"{e['name']} (CURVE)")
-        plt.xlabel("X")
-        plt.ylabel("Y")
+        xl, yl = _axis_labels(projection)
+        plt.xlabel(xl)
+        plt.ylabel(yl)
         plt.axis('equal')
         plt.show()
         return
@@ -67,17 +105,20 @@ def plot_entity(model, idx, name, samples_per_segment=30):
         plt.figure()
         # Plot u-iso lines (constant v)
         for line in u_lines:
-            xs = [p[0] for p in line]
-            ys = [p[1] for p in line]
+            proj = [_project_point(p, projection) for p in line]
+            xs = [p[0] for p in proj]
+            ys = [p[1] for p in proj]
             plt.plot(xs, ys, color='gray', linewidth=0.8)
         # Plot v-iso lines (constant u)
         for line in v_lines:
-            xs = [p[0] for p in line]
-            ys = [p[1] for p in line]
+            proj = [_project_point(p, projection) for p in line]
+            xs = [p[0] for p in proj]
+            ys = [p[1] for p in proj]
             plt.plot(xs, ys, color='black', linewidth=0.8, alpha=0.7)
-        plt.title(f"{e['name']} (SURF wireframe)")
-        plt.xlabel("X")
-        plt.ylabel("Y")
+        plt.title(f"{e['name']} (SURF wireframe: {projection})")
+        xl, yl = _axis_labels(projection)
+        plt.xlabel(xl)
+        plt.ylabel(yl)
         plt.axis('equal')
         plt.show()
         return
