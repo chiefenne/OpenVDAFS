@@ -1,6 +1,7 @@
 # Plotting helpers. One chart per call, no styles set.
 import matplotlib.pyplot as plt
 import curve_eval as ce
+import surf_eval as se
 
 def _plot_xyz_points(xyz, title=None):
     if not xyz:
@@ -37,12 +38,49 @@ def plot_entity(model, idx, name, samples_per_segment=30):
 
     if cmd == 'CURVE':
         curve = ce.decode_curve_entity(e)
-        xyz = ce.sample_curve(curve, samples_per_segment=samples_per_segment, include_knots=True)
-        _plot_xyz_points(xyz, title=f"{e['name']} (CURVE)")
+        pts, seg_ranges = ce.sample_curve(
+            curve,
+            samples_per_segment=samples_per_segment,
+            include_knots=True,
+            return_segment_ranges=True,
+        )
+
+        # Plot each segment with a distinct color
+        plt.figure()
+        for seg_idx, start, end in seg_ranges:
+            seg_pts = pts[start:end]
+            xs = [p[0] for p in seg_pts]
+            ys = [p[1] for p in seg_pts]
+            color = plt.cm.tab20(seg_idx % 20)
+            plt.plot(xs, ys, color=color)
+        plt.title(f"{e['name']} (CURVE)")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.axis('equal')
+        plt.show()
         return
 
     if cmd == 'SURF':
-        raise NotImplementedError("SURF plotting not implemented yet (needs patch sampling).")
+        surf = se.decode_surf_entity(e)
+        u_lines, v_lines = se.sample_surf(surf, samples_u_per_patch=12, samples_v_per_patch=12, include_knots=True)
+
+        plt.figure()
+        # Plot u-iso lines (constant v)
+        for line in u_lines:
+            xs = [p[0] for p in line]
+            ys = [p[1] for p in line]
+            plt.plot(xs, ys, color='gray', linewidth=0.8)
+        # Plot v-iso lines (constant u)
+        for line in v_lines:
+            xs = [p[0] for p in line]
+            ys = [p[1] for p in line]
+            plt.plot(xs, ys, color='black', linewidth=0.8, alpha=0.7)
+        plt.title(f"{e['name']} (SURF wireframe)")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.axis('equal')
+        plt.show()
+        return
 
     raise NotImplementedError(f"Plotting for entity type '{cmd}' is not implemented.")
 

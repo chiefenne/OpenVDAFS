@@ -102,13 +102,19 @@ def eval_curve_at_t(curve, t):
     return (x, y, z)
 
 
-def sample_curve(curve, samples_per_segment=20, include_knots=True):
+def sample_curve(curve, samples_per_segment=20, include_knots=True, return_segment_ranges=False):
     """
     Uniformly sample each segment in local u in [0,1].
     Returns a list of (x,y,z).
+
+    If return_segment_ranges=True, returns a tuple (pts, seg_ranges) where
+    seg_ranges is a list of (seg_idx, start, end) giving the slice of pts for
+    each segment [start:end].
     """
     pts = []
+    seg_ranges = []  # optional output when return_segment_ranges=True
     for idx, seg in enumerate(curve['segments']):
+        start = len(pts)
         # local u samples
         m = max(2, int(samples_per_segment))
         for j in range(m + (1 if include_knots or idx == 0 else 0)):
@@ -120,7 +126,8 @@ def sample_curve(curve, samples_per_segment=20, include_knots=True):
             y = _eval_monomial(seg['ay'], u)
             z = _eval_monomial(seg['az'], u)
             pts.append((x, y, z))
-    return pts
+        seg_ranges.append((idx, start, len(pts)))
+    return (pts, seg_ranges) if return_segment_ranges else pts
 
 
 def decode_curve_entity(entity):
