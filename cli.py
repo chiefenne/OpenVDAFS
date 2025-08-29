@@ -23,6 +23,8 @@ def main():
     ap.add_argument("--list", dest="list_type", help="List entity names of a type (e.g., CURVE)")
     ap.add_argument("--plot", dest="plot_name", help='Plot an entity by name (e.g., "CV3")')
     ap.add_argument("--plot-data", dest="plot_data_name", help='Print entity data/parameters to terminal (e.g., "CV3" shows order and coefficients)')
+    ap.add_argument("--projection", "-p", dest="projection", choices=["xy", "yz", "xz", "iso"], default="xy",
+                    help="2D projection for plotting: xy, yz, xz, or iso (isometric)")
     args = ap.parse_args()
 
     model = reader.read_vdafs(args.file)
@@ -37,7 +39,7 @@ def main():
                 print(nm)
 
     if args.plot_name:
-        plot.plot_entity(model, idx, args.plot_name)
+        plot.plot_entity(model, idx, args.plot_name, projection=args.projection)
 
     if args.plot_data_name:
         data_print.print_entity_data(model, idx, args.plot_data_name)
