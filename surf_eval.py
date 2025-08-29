@@ -1,248 +1,192 @@
-# SURF decoder & evaluator for VDA-FS (monomial basis).
-# Decodes the params of a SURF entity into patch structures and evaluates points
-# either by global parameters (u,v) or by uniform sampling per patch.
+# surf_eval.py — minimal VDA-FS SURF decoder & sampler (monomial patches)
+#
+# Supported layout (common VDA-FS v2 case):
+#   params = [
+#     nps, npt,
+#     s_pars[0..nps],            # length nps+1
+#     t_pars[0..npt],            # length npt+1
+#     [optional scalars ...],    # some exports insert extra flags; we skip until orders found
+#     # for each patch in s-major order (ps=0..nps-1, pt=0..npt-1):
+#       JOR, KOR,                # monomial orders in s and t (>=1)
+#       ax[JOR*KOR], ay[JOR*KOR], az[JOR*KOR]   # coeffs for x,y,z in u^j v^k
+#   ]
+#
+# Evaluation for a patch (local u,v in [0,1]):
+#   x(u,v) = sum_{j=0..JOR-1} sum_{k=0..KOR-1} ax[j*KOR+k] * u^j * v^k
+#   (same for y,z)
+#
+# We do not merge seams (verts are duplicated along patch boundaries — fine for viewing).
 
-def _decode_surf_params(params):
-    """
-    Decode a SURF params list into:
-      - nu, nv (number of patches in u and v directions)
-      - u_pars, v_pars (parameter knot vectors)
-      - patches: list of dicts with orders and coefficient matrices
-    Returns a dict {'nu': nu, 'nv': nv, 'u_pars': u_pars, 'v_pars': v_pars, 'patches': patches}
-    """
+import math
+
+def _as_int(x):
+    if isinstance(x, int):
+        return x
+    try:
+        return int(round(float(x)))
+    except Exception:
+        raise ValueError("Expected integer-like value, got: %r" % (x,))
+
+def _as_float(x):
+    if isinstance(x, (int, float)):
+        return float(x)
+    try:
+        return float(str(x))
+    except Exception:
+        raise ValueError("Expected float-like value, got: %r" % (x,))
+
+def _eval_monomial2(ax, ay, az, jor, kor, u, v):
+    # Evaluate monomial surface at (u,v)
+    # coeff layout is row-major in j (s-power), then k (t-power):
+    # idx = j*kor + k
+    # Use simple power products; Horner could optimize but clarity first.
+    # Precompute powers
+    up = [1.0]
+    for _ in range(1, jor):
+        up.append(up[-1] * u)
+    vp = [1.0]
+    for _ in range(1, kor):
+        vp.append(vp[-1] * v)
+
+    x = y = z = 0.0
+    idx = 0
+    for j in range(jor):
+        uj = up[j]
+        for k in range(kor):
+            w = uj * vp[k]
+            x += ax[idx] * w
+            y += ay[idx] * w
+            z += az[idx] * w
+            idx += 1
+    return (x, y, z)
+
+def _decode_surface_params(params):
     if not params or len(params) < 2:
-        raise ValueError("SURF has insufficient parameters")
+        raise ValueError("SURF: missing nps/npt")
 
-    # number of patches in u and v directions
-    nu = int(params[0])
-    nv = int(params[1])
-    if nu <= 0 or nv <= 0:
-        raise ValueError("SURF patch counts must be positive")
-
-    # (nu+1) u-parameters and (nv+1) v-parameters
-    need = 2 + (nu + 1) + (nv + 1)
-    if len(params) < need:
-        raise ValueError("SURF missing parameter vectors")
-
-    u_pars = params[2:2 + (nu + 1)]
-    v_pars = params[2 + (nu + 1):2 + (nu + 1) + (nv + 1)]
-
-    # remaining are patch blocks
-    patch_data = params[2 + (nu + 1) + (nv + 1):]
-    patches = []
     i = 0
+    nps = _as_int(params[i]); i += 1
+    npt = _as_int(params[i]); i += 1
+    if nps <= 0 or npt <= 0:
+        raise ValueError("SURF: nps/npt must be positive")
 
-    for u_idx in range(nu):
-        for v_idx in range(nv):
-            if i >= len(patch_data):
-                raise ValueError("SURF missing patch block")
+    if len(params) < i + (nps + 1) + (npt + 1):
+        raise ValueError("SURF: missing global parameter vectors")
 
-            # Orders in u and v directions
-            Ku = int(patch_data[i]); i += 1
-            Kv = int(patch_data[i]); i += 1
-            if Ku <= 0 or Kv <= 0:
-                raise ValueError("SURF patch orders must be positive")
+    s_pars = [ _as_float(params[i + k]) for k in range(nps + 1) ]
+    i += (nps + 1)
+    t_pars = [ _as_float(params[i + k]) for k in range(npt + 1) ]
+    i += (npt + 1)
 
-            # Total coefficients needed: Ku * Kv for each of X, Y, Z
-            total_coeffs = 3 * Ku * Kv
-            end = i + total_coeffs
-            if end > len(patch_data):
-                raise ValueError("SURF patch coefficients incomplete")
+    patches = []
+    total_patches = nps * npt
 
-            # Extract coefficient matrices for X, Y, Z
-            # Coefficients are typically ordered as: all X, then all Y, then all Z
-            # Each coordinate has Ku*Kv coefficients arranged in u-major order
-            coeffs_x = []
-            coeffs_y = []
-            coeffs_z = []
+    # Some exports insert extra scalar(s) here (e.g., a flag). Skip until we see two ints (orders).
+    def _looks_like_orders(a, b):
+        try:
+            return _as_int(a) >= 1 and _as_int(b) >= 1
+        except Exception:
+            return False
 
-            # X coefficients
-            for u in range(Ku):
-                row = []
-                for v in range(Kv):
-                    row.append(patch_data[i])
-                    i += 1
-                coeffs_x.append(row)
+    # advance i until we can parse JOR,KOR (while keeping bounds)
+    while i + 1 < len(params) and not _looks_like_orders(params[i], params[i+1]):
+        i += 1
 
-            # Y coefficients
-            for u in range(Ku):
-                row = []
-                for v in range(Kv):
-                    row.append(patch_data[i])
-                    i += 1
-                coeffs_y.append(row)
+    count = 0
+    while count < total_patches:
+        if i + 1 >= len(params):
+            raise ValueError("SURF: truncated before patch %d orders" % count)
+        jor = _as_int(params[i]); i += 1
+        kor = _as_int(params[i]); i += 1
+        if jor <= 0 or kor <= 0:
+            raise ValueError("SURF: invalid patch orders at %d" % count)
 
-            # Z coefficients
-            for u in range(Ku):
-                row = []
-                for v in range(Kv):
-                    row.append(patch_data[i])
-                    i += 1
-                coeffs_z.append(row)
+        need = jor * kor
+        if i + 3*need > len(params):
+            raise ValueError("SURF: not enough coefficients for patch %d" % count)
 
-            # Validate coefficients are numeric
-            for matrix in (coeffs_x, coeffs_y, coeffs_z):
-                for row in matrix:
-                    for val in row:
-                        if not isinstance(val, (int, float)):
-                            raise ValueError("SURF coefficients must be numeric")
+        ax = [ _as_float(params[i + k])       for k in range(need) ]
+        ay = [ _as_float(params[i + need + k]) for k in range(need) ]
+        az = [ _as_float(params[i + 2*need + k]) for k in range(need) ]
+        i += 3*need
 
-            u0, u1 = float(u_pars[u_idx]), float(u_pars[u_idx + 1])
-            v0, v1 = float(v_pars[v_idx]), float(v_pars[v_idx + 1])
+        # map to s,t intervals (s-major listing: ps fastest or pt fastest varies by export;
+        # we assume ps major here: iterate t inside s)
+        ps = count // npt
+        pt = count %  npt
+        s0, s1 = s_pars[ps],   s_pars[ps+1]
+        t0, t1 = t_pars[pt],   t_pars[pt+1]
 
-            if u1 == u0 or v1 == v0:
-                raise ValueError("SURF parameter intervals have zero length")
-
-            patches.append({
-                'u_idx': u_idx,
-                'v_idx': v_idx,
-                'order_u': Ku,
-                'order_v': Kv,
-                'coeffs_x': coeffs_x,
-                'coeffs_y': coeffs_y,
-                'coeffs_z': coeffs_z,
-                'u0': u0, 'u1': u1,
-                'v0': v0, 'v1': v1
-            })
+        patches.append({
+            'jor': jor, 'kor': kor,
+            'ax': ax, 'ay': ay, 'az': az,
+            's0': _as_float(s0), 's1': _as_float(s1),
+            't0': _as_float(t0), 't1': _as_float(t1),
+        })
+        count += 1
 
     return {
-        'nu': nu,
-        'nv': nv,
-        'u_pars': u_pars,
-        'v_pars': v_pars,
+        'nps': nps, 'npt': npt,
+        's_pars': s_pars, 't_pars': t_pars,
         'patches': patches
     }
 
-def _eval_poly2d(coeffs, u, v):
-    """Evaluate 2D monomial polynomial sum_{i,j} coeffs[i][j] * u^i * v^j."""
-    # Precompute powers for clarity
-    Ku = len(coeffs)
-    Kv = len(coeffs[0]) if Ku > 0 else 0
-    up = [1.0]
-    for _ in range(1, Ku):
-        up.append(up[-1] * u)
-    vp = [1.0]
-    for _ in range(1, Kv):
-        vp.append(vp[-1] * v)
-    s = 0.0
-    for i in range(Ku):
-        ci = coeffs[i]
-        ui = up[i]
-        for j in range(Kv):
-            s += ci[j] * ui * vp[j]
-    return s
-
-def eval_surf_at_uv(surf, u, v):
-    """
-    Evaluate decoded surface (from _decode_surf_params) at global parameters (u,v).
-    Returns (x, y, z).
-    """
-    patches = surf['patches']
-    u_pars = surf['u_pars']
-    v_pars = surf['v_pars']
-
-    if not patches:
-        raise ValueError("SURF has no patches")
-
-    # Clamp into global ranges
-    umin, umax = float(u_pars[0]), float(u_pars[-1])
-    vmin, vmax = float(v_pars[0]), float(v_pars[-1])
-    if u < umin: u = umin
-    if u > umax: u = umax
-    if v < vmin: v = vmin
-    if v > vmax: v = vmax
-
-    # Find patch indices (u_idx, v_idx)
-    ui = None
-    for i in range(len(u_pars) - 1):
-        if u <= float(u_pars[i + 1]):
-            ui = i
-            break
-    if ui is None:
-        ui = len(u_pars) - 2
-
-    vi = None
-    for j in range(len(v_pars) - 1):
-        if v <= float(v_pars[j + 1]):
-            vi = j
-            break
-    if vi is None:
-        vi = len(v_pars) - 2
-
-    # Find the matching patch (stored row-major over u_idx, v_idx)
-    patch = None
-    for p in patches:
-        if p['u_idx'] == ui and p['v_idx'] == vi:
-            patch = p
-            break
-    if patch is None:
-        # Fallback to last patch if not found (shouldn't happen)
-        patch = patches[-1]
-
-    u0, u1 = patch['u0'], patch['u1']
-    v0, v1 = patch['v0'], patch['v1']
-    uu = (u - u0) / (u1 - u0)
-    vv = (v - v0) / (v1 - v0)
-
-    x = _eval_poly2d(patch['coeffs_x'], uu, vv)
-    y = _eval_poly2d(patch['coeffs_y'], uu, vv)
-    z = _eval_poly2d(patch['coeffs_z'], uu, vv)
-    return (x, y, z)
-
-def sample_surf(surf, samples_u_per_patch=10, samples_v_per_patch=10, include_knots=True):
-    """
-    Uniformly sample each patch, returning wireframe polylines.
-    Returns a tuple (u_lines, v_lines), where each element is a list of polylines;
-    a polyline is a list of (x,y,z) points.
-    """
-    u_lines = []  # lines of constant v within each patch, swept along u
-    v_lines = []  # lines of constant u within each patch, swept along v
-
-    for p in surf['patches']:
-        u0, u1 = p['u0'], p['u1']
-        v0, v1 = p['v0'], p['v1']
-
-        # how many samples along each direction within this patch
-        mu = max(2, int(samples_u_per_patch))
-        mv = max(2, int(samples_v_per_patch))
-
-        # Build v-iso lines (constant v; sweep u)
-        for j in range(mv + 1):
-            # avoid duplicating interior v-boundary lines across patches if include_knots=False
-            if j == 0 and p['v_idx'] > 0 and not include_knots:
-                continue
-            vv = j / float(mv)
-            line = []
-            for i in range(mu + 1):
-                # avoid duplicating interior u-boundary points is not critical for polylines
-                uu = i / float(mu)
-                x = _eval_poly2d(p['coeffs_x'], uu, vv)
-                y = _eval_poly2d(p['coeffs_y'], uu, vv)
-                z = _eval_poly2d(p['coeffs_z'], uu, vv)
-                line.append((x, y, z))
-            u_lines.append(line)
-
-        # Build u-iso lines (constant u; sweep v)
-        for i in range(mu + 1):
-            if i == 0 and p['u_idx'] > 0 and not include_knots:
-                continue
-            uu = i / float(mu)
-            line = []
-            for j in range(mv + 1):
-                vv = j / float(mv)
-                x = _eval_poly2d(p['coeffs_x'], uu, vv)
-                y = _eval_poly2d(p['coeffs_y'], uu, vv)
-                z = _eval_poly2d(p['coeffs_z'], uu, vv)
-                line.append((x, y, z))
-            v_lines.append(line)
-
-    return u_lines, v_lines
-
-def decode_surf_entity(entity):
-    """
-    Convenience: given a parsed entity dict {'command','params',...} for SURF,
-    return the decoded structure produced by _decode_surf_params.
-    """
+def decode_surface_entity(entity):
     if entity.get('command') != 'SURF':
         raise ValueError("Entity is not a SURF")
-    return _decode_surf_params(entity.get('params', []))
+    return _decode_surface_params(entity.get('params', []))
+
+# alias for your existing name
+def decode_surf_entity(entity):
+    return decode_surface_entity(entity)
+
+def sample_surface(surface, nu=40, nv=40, include_seams=True):
+    """
+    Sample each patch on an (nu x nv) grid in local (u,v) ∈ [0,1].
+    Returns (vertices Nx3 list, faces Mx3 int list).
+    Seams are NOT merged (duplicate vertices along boundaries) — simple & robust.
+    """
+    verts = []
+    faces = []
+
+    nu = max(2, int(nu))
+    nv = max(2, int(nv))
+
+    vidx_offset = 0
+    for p in surface['patches']:
+        jor, kor = p['jor'], p['kor']
+        ax, ay, az = p['ax'], p['ay'], p['az']
+
+        # build grid of (u_i, v_j)
+        for i in range(nu + 1):
+            # avoid duplicating seam if requested
+            if i == 0 and not include_seams and vidx_offset > 0:
+                continue
+            u = i / float(nu)
+            for j in range(nv + 1):
+                if j == 0 and not include_seams and vidx_offset > 0:
+                    continue
+                v = j / float(nv)
+                x, y, z = _eval_monomial2(ax, ay, az, jor, kor, u, v)
+                verts.append((x, y, z))
+
+        # local counts (accounting for seam skipping is messy; keep simple path)
+        cols = nv + 1
+        rows = nu + 1
+        # create two triangles per cell
+        for i in range(nu):
+            for j in range(nv):
+                a = vidx_offset + i*cols + j
+                b = a + 1
+                c = a + cols
+                d = c + 1
+                faces.append((a, b, d))
+                faces.append((a, d, c))
+
+        vidx_offset += rows * cols
+
+    return verts, faces
+
+# alias
+def sample_surf(surface, nu=40, nv=40, include_seams=True):
+    return sample_surface(surface, nu, nv, include_seams)

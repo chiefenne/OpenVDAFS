@@ -4,52 +4,36 @@ import math
 import curve_eval as ce
 import surf_eval as se
 
-def _project_point(pt, projection='xy'):
-    x, y, z = pt
-    if projection == 'xy':
-        return (x, y)
-    if projection == 'xz':
-        return (x, z)
-    if projection == 'yz':
-        return (y, z)
-    if projection == 'iso':
-        # Isometric projection via Z-then-X rotations: Z 45°, then X 35.264°
-        alpha = math.radians(45.0)
-        beta = math.radians(35.26438968)
-        cosA, sinA = math.cos(alpha), math.sin(alpha)
-        cosB, sinB = math.cos(beta), math.sin(beta)
-        x1 = x * cosA - y * sinA
-        y1 = x * sinA + y * cosA
-        y2 = y1 * cosB - z * sinB
-        return (x1, y2)
-    # default fallback
-    return (x, y)
-
-def _axis_labels(projection='xy'):
-    if projection == 'xy':
-        return ('X', 'Y')
-    if projection == 'xz':
-        return ('X', 'Z')
-    if projection == 'yz':
-        return ('Y', 'Z')
-    if projection == 'iso':
-        return ("X'", "Y'")
-    return ('X', 'Y')
-
-def _plot_xyz_points(xyz, title=None, projection='xy'):
+def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None):
     if not xyz:
         raise ValueError("No points to plot.")
-    proj = [_project_point(p, projection) for p in xyz]
-    xs = [p[0] for p in proj]
-    ys = [p[1] for p in proj]
+
+    xs = [p[0] for p in xyz]
+    ys = [p[1] for p in xyz]
     plt.figure()
-    plt.plot(xs, ys, marker='o')
+
+    if colors is None or segment_labels is None:
+        # Single color plot (for points, etc.)
+        plt.plot(xs, ys, marker='o')
+    else:
+        # Multi-segment plot with different colors
+        start_idx = 0
+        for i, (color, label) in enumerate(zip(colors, segment_labels)):
+            end_idx = start_idx + label['point_count']
+            segment_xs = xs[start_idx:end_idx]
+            segment_ys = ys[start_idx:end_idx]
+            plt.plot(segment_xs, segment_ys, marker='o', color=color,
+                    label=f"Segment {i+1}", linewidth=2, markersize=4)
+            start_idx = end_idx
+        plt.legend()
+
     if title:
         plt.title(title)
     xl, yl = _axis_labels(projection)
     plt.xlabel(xl)
     plt.ylabel(yl)
     plt.axis('equal')
+    plt.grid(True, alpha=0.3)
     plt.show()
 
 def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
@@ -73,29 +57,30 @@ def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
 
     if cmd == 'CURVE':
         curve = ce.decode_curve_entity(e)
-        pts, seg_ranges = ce.sample_curve(
-            curve,
-            samples_per_segment=samples_per_segment,
-            include_knots=True,
-            return_segment_ranges=True,
-        )
 
-        # Plot each segment with a distinct color
-        plt.figure()
-        cmap = plt.get_cmap('tab20', 20)
-        for seg_idx, start, end in seg_ranges:
-            seg_pts = pts[start:end]
-            proj = [_project_point(p, projection) for p in seg_pts]
-            xs = [p[0] for p in proj]
-            ys = [p[1] for p in proj]
-            color = cmap(seg_idx % 20)
-            plt.plot(xs, ys, color=color)
-        plt.title(f"{e['name']} (CURVE)")
-        xl, yl = _axis_labels(projection)
-        plt.xlabel(xl)
-        plt.ylabel(yl)
-        plt.axis('equal')
-        plt.show()
+        # Generate colors for segments using a predefined color list
+        color_palette = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        n_segments = curve['n']
+        colors = [color_palette[i % len(color_palette)] for i in range(n_segments)]
+
+        # Sample each segment separately to track segment boundaries
+        all_points = []
+        segment_info = []
+
+        for idx, seg in enumerate(curve['segments']):
+            # Sample this segment
+            seg_curve = {'n': 1, 'pars': [seg['t0'], seg['t1']], 'segments': [seg]}
+            seg_points = ce.sample_curve(seg_curve, samples_per_segment=samples_per_segment, include_knots=True)
+
+            # Avoid duplicating points at segment boundaries (except for first segment)
+            if idx > 0 and all_points:
+                seg_points = seg_points[1:]  # Skip first point to avoid duplication
+
+            all_points.extend(seg_points)
+            segment_info.append({'point_count': len(seg_points)})
+
+        _plot_xyz_points(all_points, title=f"{e['name']} (CURVE)",
+                        colors=colors, segment_labels=segment_info)
         return
 
     if cmd == 'SURF':
