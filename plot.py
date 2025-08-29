@@ -12,6 +12,8 @@ def _axis_labels(projection):
         return 'X', 'Z'
     elif projection == 'yz':
         return 'Y', 'Z'
+    elif projection == 'iso':
+        return 'Iso-X', 'Iso-Y'
     else:
         return 'X', 'Y'  # default to xy
 
@@ -24,6 +26,23 @@ def _project_point(point, projection):
         return (x, z)
     elif projection == 'yz':
         return (y, z)
+    elif projection == 'iso':
+        # Simple isometric-like projection (no perspective): rotate axes to 30°/35.264°
+        # Using a common approximation: u = x - y, v = (x + y)/2 - z * 0.816
+        # We'll use a normalized variant to keep scales reasonable.
+        # Reference: isometric projection matrix with rotations about X and Z.
+        import math
+        angle_x = math.radians(35.26438968)
+        angle_z = math.radians(45)
+        # Rotate around Z
+        xr = x * math.cos(angle_z) - y * math.sin(angle_z)
+        yr = x * math.sin(angle_z) + y * math.cos(angle_z)
+        zr = z
+        # Then rotate around X
+        yr2 = yr * math.cos(angle_x) - zr * math.sin(angle_x)
+        zr2 = yr * math.sin(angle_x) + zr * math.cos(angle_x)
+        # Drop Z
+        return (xr, yr2)
     else:
         return (x, y)  # default to xy
 
