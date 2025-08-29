@@ -4,12 +4,38 @@ import math
 import curve_eval as ce
 import surf_eval as se
 
-def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None):
+def _axis_labels(projection):
+    """Return appropriate axis labels for the given projection."""
+    if projection == 'xy':
+        return 'X', 'Y'
+    elif projection == 'xz':
+        return 'X', 'Z'
+    elif projection == 'yz':
+        return 'Y', 'Z'
+    else:
+        return 'X', 'Y'  # default to xy
+
+def _project_point(point, projection):
+    """Project a 3D point to 2D based on the projection type."""
+    x, y, z = point[:3]  # handle both tuples and arrays
+    if projection == 'xy':
+        return (x, y)
+    elif projection == 'xz':
+        return (x, z)
+    elif projection == 'yz':
+        return (y, z)
+    else:
+        return (x, y)  # default to xy
+
+def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None, projection='xy'):
     if not xyz:
         raise ValueError("No points to plot.")
 
-    xs = [p[0] for p in xyz]
-    ys = [p[1] for p in xyz]
+    # Apply projection to points
+    projected_points = [_project_point(p, projection) for p in xyz]
+    xs = [p[0] for p in projected_points]
+    ys = [p[1] for p in projected_points]
+
     plt.figure()
 
     if colors is None or segment_labels is None:
@@ -80,26 +106,48 @@ def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
             segment_info.append({'point_count': len(seg_points)})
 
         _plot_xyz_points(all_points, title=f"{e['name']} (CURVE)",
-                        colors=colors, segment_labels=segment_info)
+                        colors=colors, segment_labels=segment_info, projection=projection)
         return
 
     if cmd == 'SURF':
         surf = se.decode_surf_entity(e)
-        u_lines, v_lines = se.sample_surf(surf, samples_u_per_patch=12, samples_v_per_patch=12, include_knots=True)
+        # Get vertices and faces from surface sampling
+        vertices, faces = se.sample_surf(surf, nu=12, nv=12)
 
         plt.figure()
-        # Plot u-iso lines (constant v)
-        for line in u_lines:
-            proj = [_project_point(p, projection) for p in line]
-            xs = [p[0] for p in proj]
-            ys = [p[1] for p in proj]
-            plt.plot(xs, ys, color='gray', linewidth=0.8)
-        # Plot v-iso lines (constant u)
-        for line in v_lines:
-            proj = [_project_point(p, projection) for p in line]
-            xs = [p[0] for p in proj]
-            ys = [p[1] for p in proj]
-            plt.plot(xs, ys, color='black', linewidth=0.8, alpha=0.7)
+
+        # Create wireframe by plotting patch boundaries
+        # This is a simplified wireframe - just plot some iso-parameter lines
+        n_patches = len(surf['patches'])
+        for i, patch in enumerate(surf['patches']):
+            # Sample a few lines across each patch for wireframe visualization
+            for u_val in [0.0, 0.5, 1.0]:
+                line_points = []
+                for v_val in [0.0, 0.25, 0.5, 0.75, 1.0]:
+                    # Evaluate the patch at (u_val, v_val)
+                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'],
+                                               patch['jor'], patch['kor'], u_val, v_val)
+                    line_points.append((x, y, z))
+
+                # Project and plot this line
+                proj = [_project_point(p, projection) for p in line_points]
+                xs = [p[0] for p in proj]
+                ys = [p[1] for p in proj]
+                plt.plot(xs, ys, color='gray', linewidth=0.8)
+
+            # Plot v-direction lines
+            for v_val in [0.0, 0.5, 1.0]:
+                line_points = []
+                for u_val in [0.0, 0.25, 0.5, 0.75, 1.0]:
+                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'],
+                                               patch['jor'], patch['kor'], u_val, v_val)
+                    line_points.append((x, y, z))
+
+                proj = [_project_point(p, projection) for p in line_points]
+                xs = [p[0] for p in proj]
+                ys = [p[1] for p in proj]
+                plt.plot(xs, ys, color='black', linewidth=0.8, alpha=0.7)
+
         plt.title(f"{e['name']} (SURF wireframe: {projection})")
         xl, yl = _axis_labels(projection)
         plt.xlabel(xl)
