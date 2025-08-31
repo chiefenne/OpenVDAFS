@@ -8,14 +8,18 @@ A Python library and CLI for reading, parsing, inspecting, and visualizing VDA�
 
 ### ✅ Current Features
 
-- **VDA-FS Format Support**: Read and parse VDA-FS format versions 1.0 and 2.0
-- **Entity Parsing**: Full support for:
-  - `CURVE` entities (multi-segment parametric curves with monomial basis)
-  - `POINT`, `PSET`, `MDI` entities (point data)
-  - `SURF` entities (parametric surfaces) - *basic support*
-- **CLI Tool**: Command-line interface for file inspection and analysis
-- **Data Visualization**: Plot geometric entities using matplotlib
-- **Data Inspection**: Print detailed entity data including orders, parameters, and coefficients
+- VDA-FS reader for format versions 1.0 and 2.0
+- Entity support:
+  - `CURVE` (multi-segment parametric, monomial basis)
+  - `POINT`, `PSET`, `MDI` (point data)
+  - `SURF` (parametric surfaces; wireframe visualization)
+  - `CONS` and `FACE` decoding for dependency traversal and export (no FACE visualization)
+- CLI for listing, plotting, and exporting
+- Visualization:
+  - Plot a single entity by name (`CURVE`, `POINT`/`PSET`/`MDI`)
+  - Plot all: draw all `CONS` (via their referenced `CURVE`s) and `SURF` wireframes in one view
+  - Multiple projections: `xy`, `yz`, `xz`, `iso`
+- Inspection: Print detailed entity data (orders, parameters, coefficients)
 
 ### 🔄 Planned Features
 
@@ -29,53 +33,92 @@ A Python library and CLI for reading, parsing, inspecting, and visualizing VDA�
 
 ### Prerequisites
 
-- Python 3.7+
-- matplotlib (for plotting functionality)
+- Python 3.8+
+- matplotlib (only needed for plotting; listing/inspection works without it)
 
 ### Setup
 
 ```bash
 git clone https://github.com/chiefenne/OpenVDAFS.git
 cd OpenVDAFS
-pip install matplotlib  # For plotting functionality
+pip install matplotlib  # optional: required for plotting only
 ```
 
 ## Usage
 
 ### Command Line Interface
 
-The CLI tool provides several commands to work with VDA-FS files:
+The CLI provides listing, plotting, and export utilities.
 
-#### List Entities by Type
+#### Options overview
+
+- `--list TYPE` — list entity names of a given type (e.g., `CURVE`, `SURF`, `CONS`, `FACE`, `POINT`, `PSET`, `MDI`)
+- `--list ALL` — grouped listing by entity type; also prints `HEADER: N lines` when present
+- `--plot NAME` — plot a single entity by name (`CURVE`, `SURF`, `POINT`/`PSET`/`MDI`)
+- `--plot-all` — plot all `CONS` (via referenced curves) and `SURF` wireframes in one figure
+- `--projection {xy|yz|xz|iso}` or `-p` — choose 2D projection for plots (default: `xy`)
+- `--plot-data NAME` — print detailed, textual entity data to the terminal
+- `--export-faces FACE1 FACE2` — export two `FACE`s with their dependencies to separate `.vda` files
+- `--out-dir DIR` — output directory for exports (default: `./exports`)
+
+#### List entities by type
 
 ```bash
 python cli.py file.vda --list CURVE
 python cli.py file.vda --list SURF
-python cli.py file.vda --list POINT
+python cli.py file.vda --list ALL   # grouped by type; shows HEADER count if present
 ```
 
-#### Visualize Entities
+#### Visualize entities
 
 ```bash
 # Plot geometric representation
 python cli.py file.vda --plot CV3
 
-# Plot points
+# Plot points (POINT/PSET/MDI)
 python cli.py file.vda --plot PT1
+
+# Plot a SURF as a wireframe
+python cli.py file.vda --plot SF1
+
+# Choose projection (-p/--projection): xy, yz, xz, iso
+python cli.py file.vda --plot CV3 -p yz
+python cli.py file.vda --plot CV3 -p iso
+
+# Plot all CONS (via referenced CURVEs) and SURF wireframes in one view
+python cli.py file.vda --plot-all -p xz
 ```
 
-#### Inspect Entity Data
+#### Inspect entity data (text)
 
 ```bash
-# Print detailed entity information (orders, coefficients, parameters)
+# Print detailed entity information (orders, coefficients, parameters) to the terminal
 python cli.py file.vda --plot-data CV3
 ```
+
+#### Export two FACEs (with dependencies)
+
+```bash
+python cli.py file.vda --export-faces FA12 FA27 --out-dir ./exports
+```
+This writes `./exports/FA12.vda` and `./exports/FA27.vda` containing each `FACE` and referenced geometry.
+
+Tip: Some extra utilities live under the `tools/` package and can be run directly, e.g.:
+
+```bash
+# Check surface continuity along patch seams
+python -m tools.check_surf_continuity examples/SURF_FLAE0001.vda
+
+# Diagnose SURF evaluation variants (dev/experimental)
+python -m tools.diagnose_surf_encoding examples/SURF_FLAE0001.vda
+```
+
 
 ### Example Output
 
 For a CURVE entity, `--plot-data` shows:
 
-```
+```text
 Entity: SP1
 Type: CURVE
 
@@ -121,31 +164,37 @@ if entity['command'] == 'CURVE':
     # Access curve data: curve['n'], curve['segments'], etc.
 ```
 
-## File Structure
+## File structure
 
-```
+```text
 OpenVDAFS/
 ├── cli.py              # Command-line interface
 ├── reader.py           # VDA-FS file parser
 ├── index.py            # Entity indexing
 ├── query.py            # Entity queries
-├── plot.py             # Visualization tools
-├── data_print.py       # Data inspection utilities
-├── curve_eval.py       # CURVE entity decoder and evaluator
-├── surf_eval.py        # SURF entity decoder
+├── plot.py             # Visualization (single entity, all CONS+SURF wireframes)
+├── curve_eval.py       # CURVE decoder and evaluator
+├── surf_eval.py        # SURF decoder and sampling helpers
+├── face_eval.py        # CONS/FACE helpers (decode CONS; FACE export dependencies)
+├── tools/              # Utility scripts and helpers
+│   ├── __init__.py
+│   ├── data_print.py   # Textual data inspection utilities
+│   ├── export_faces.py # Write minimal VDA files containing individual FACEs
+│   ├── check_surf_continuity.py
+│   └── diagnose_surf_encoding.py
 └── examples/           # Example VDA-FS files
     ├── CURVE_SP1.vda
     └── SURF_FLAE0001.vda
 ```
 
-## VDA-FS Format Support
+## VDA-FS format support
 
 ### Supported Entities
 
 | Entity Type | Read | Parse | Visualize | Data Export |
 |-------------|------|-------|-----------|-------------|
 | CURVE       | ✅   | ✅    | ✅        | ✅          |
-| SURF        | ✅   | ✅    | 🔄        | ✅          |
+| SURF        | ✅   | ✅    | ✅ (wireframe) | ✅          |
 | POINT       | ✅   | ✅    | ✅        | ✅          |
 | PSET        | ✅   | ✅    | ✅        | ✅          |
 | MDI         | ✅   | ✅    | ✅        | ✅          |
@@ -157,10 +206,11 @@ OpenVDAFS/
 
 ## Examples
 
-The `examples/` directory contains sample VDA-FS files for testing:
+The `examples/` and `VDA_EXAMPLES/` directories contain sample VDA-FS files for testing:
 
 - `CURVE_SP1.vda`: Multi-segment parametric curve
 - `SURF_FLAE0001.vda`: Parametric surface data
+- `VDA_EXAMPLES/pipe-joint.vda`, `...`: Larger mixed-entity examples
 
 ## Contributing
 
@@ -190,7 +240,7 @@ This project is under active development. Contributions are welcome!
 
 ## License
 
-[License information to be added]
+MIT License. See `LICENSE` for details.
 
 ## References
 
