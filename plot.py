@@ -85,7 +85,6 @@ def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None, projecti
     plt.xlabel(xl)
     plt.ylabel(yl)
     plt.axis('equal')
-    plt.grid(True, alpha=0.3)
     plt.show()
 
 def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
@@ -255,7 +254,6 @@ def plot_all(model, idx, projection='xy', samples_per_segment=30):
     ax.set_xlabel(xl)
     ax.set_ylabel(yl)
     ax.set_aspect('equal', adjustable='box')
-    ax.grid(True, alpha=0.25)
     ax.set_title(f"All entities: {len(cons_names)} CONS, {len(surf_names)} SURF ({projection})")
     plt.show()
 
@@ -306,21 +304,18 @@ def _plot_curve_data(curve, name):
         axes[i, 0].set_title(f"Segment {i+1} - X Coefficients (Order {order})")
         axes[i, 0].set_xlabel("Coefficient Index")
         axes[i, 0].set_ylabel("Value")
-        axes[i, 0].grid(True, alpha=0.3)
 
         # Plot Y coefficients
         axes[i, 1].bar(range(order), ay, color='green', alpha=0.7)
         axes[i, 1].set_title(f"Segment {i+1} - Y Coefficients (Order {order})")
         axes[i, 1].set_xlabel("Coefficient Index")
         axes[i, 1].set_ylabel("Value")
-        axes[i, 1].grid(True, alpha=0.3)
 
         # Plot Z coefficients
         axes[i, 2].bar(range(order), az, color='blue', alpha=0.7)
         axes[i, 2].set_title(f"Segment {i+1} - Z Coefficients (Order {order})")
         axes[i, 2].set_xlabel("Coefficient Index")
         axes[i, 2].set_ylabel("Value")
-        axes[i, 2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
@@ -350,19 +345,16 @@ def _plot_point_data(entity):
     axes[0].set_title("X Coordinates")
     axes[0].set_xlabel("Point Index")
     axes[0].set_ylabel("X Value")
-    axes[0].grid(True, alpha=0.3)
 
     axes[1].bar(point_indices, ys, color='green', alpha=0.7)
     axes[1].set_title("Y Coordinates")
     axes[1].set_xlabel("Point Index")
     axes[1].set_ylabel("Y Value")
-    axes[1].grid(True, alpha=0.3)
 
     axes[2].bar(point_indices, zs, color='blue', alpha=0.7)
     axes[2].set_title("Z Coordinates")
     axes[2].set_xlabel("Point Index")
     axes[2].set_ylabel("Z Value")
-    axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
@@ -376,5 +368,4 @@ def _plot_surf_data(entity):
     plt.title(f"SURF Parameters: {entity['name']}")
     plt.xlabel("Parameter Index")
     plt.ylabel("Parameter Value")
-    plt.grid(True, alpha=0.3)
     plt.show()
