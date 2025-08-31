@@ -4,3 +4,4 @@ online_examples
 *.pyc
 sw-reverser
 VDA_EXAMPLES
+.DS_Store
