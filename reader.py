@@ -38,6 +38,12 @@ def _coalesce_statements(records):
 
     for lineno, raw in records:
         data = raw[:72]  # only data columns
+        # Stop coalescing when encountering END (standalone terminator)
+        if data.strip().upper() == 'END':
+            flushed = flush(lineno - 1)
+            if flushed:
+                yield flushed
+            break
         if not data.strip() or _is_comment(data):
             continue
 
@@ -104,21 +110,26 @@ def read_vdafs(path):
         if word == 'HEADER':
             n = 0
             if rest:
-                try:
-                    n = int(rest.split(',')[0].strip())
-                except:
-                    n = 0
+                # Extract leading integer count even if coalesced text follows
+                m_hdr = re.match(r"\s*([\+\-]?\d+)", rest)
+                if m_hdr:
+                    try:
+                        n = int(m_hdr.group(1))
+                    except Exception:
+                        n = 0
             lines = []
-            ln = ln1 + 1
-            for _ in range(n):
+            # Always read the next N raw records starting immediately after the HEADER statement line
+            ln0_int = ln0 if isinstance(ln0, int) else int(ln0 or 0)
+            ln = ln0_int + 1
+            for _ in range(max(0, n)):
                 lines.append(ln_to_text.get(ln, ''))
                 ln += 1
             header = {
                 'name': name,
                 'n_lines': n,
                 'lines': lines,
-                'lineno_start': ln0,
-                'lineno_end': ln1 + n
+                'lineno_start': ln0_int,
+                'lineno_end': ln0_int + n
             }
             continue
 
