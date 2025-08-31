@@ -212,10 +212,6 @@ The `examples/` and `VDA_EXAMPLES/` directories contain sample VDA-FS files for 
 - `SURF_FLAE0001.vda`: Parametric surface data
 - `VDA_EXAMPLES/pipe-joint.vda`, `...`: Larger mixed-entity examples
 
-## Contributing
-
-This project is under active development. Contributions are welcome!
-
 ### Development Setup
 
 1. Clone the repository
