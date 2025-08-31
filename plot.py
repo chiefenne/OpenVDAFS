@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import math
 import curve_eval as ce
 import surf_eval as se
+import query as q
+import face_eval as fe
 
 def _axis_labels(projection):
     """Return appropriate axis labels for the given projection."""
@@ -45,6 +47,11 @@ def _project_point(point, projection):
         return (xr, yr2)
     else:
         return (x, y)  # default to xy
+
+"""
+Note: FACE triangulation and trimming have been removed per request. This module now
+only draws CONS (via their referenced CURVEs) and SURF wireframes.
+"""
 
 def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None, projection='xy'):
     if not xyz:
@@ -176,6 +183,83 @@ def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
         return
 
     raise NotImplementedError(f"Plotting for entity type '{cmd}' is not implemented.")
+
+def plot_all(model, idx, projection='xy', samples_per_segment=30):
+    """
+    Plot all CONS (as their referenced 3D CURVEs) and SURF entities in one figure.
+    """
+    cons_names = q.list_names_by_type(idx, 'CONS')
+    surf_names = q.list_names_by_type(idx, 'SURF')
+
+    plt.figure()
+    ax = plt.gca()
+
+    # Draw CONS by sampling their referenced CURVEs in 3D
+    for cname in cons_names:
+        econs = q.get_entity(idx, cname)
+        if not econs:
+            continue
+        try:
+            cons = fe.decode_cons_entity(econs)
+        except Exception:
+            continue
+        cv_ref = cons.get('curve')
+        if not cv_ref:
+            continue
+        ecv = q.get_entity(idx, cv_ref)
+        if not ecv:
+            continue
+        try:
+            curve = ce.decode_curve_entity(ecv)
+        except Exception:
+            continue
+        all_points = []
+        for sidx, seg in enumerate(curve['segments']):
+            seg_curve = {'n': 1, 'pars': [seg['t0'], seg['t1']], 'segments': [seg]}
+            seg_points = ce.sample_curve(seg_curve, samples_per_segment=samples_per_segment, include_knots=True)
+            if sidx > 0 and all_points:
+                seg_points = seg_points[1:]
+            all_points.extend(seg_points)
+        if not all_points:
+            continue
+        proj = [_project_point(p, projection) for p in all_points]
+        ax.plot([p[0] for p in proj], [p[1] for p in proj], linewidth=1.4, alpha=0.95)
+
+    # Draw SURF wireframes
+    for sname in surf_names:
+        e = q.get_entity(idx, sname)
+        try:
+            surf = se.decode_surf_entity(e)
+        except Exception:
+            continue
+        for patch in surf.get('patches', []):
+            # u-lines
+            for u_val in (0.0, 0.5, 1.0):
+                line_points = []
+                for v_val in (0.0, 0.25, 0.5, 0.75, 1.0):
+                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'], patch['jor'], patch['kor'], u_val, v_val)
+                    line_points.append((x, y, z))
+                proj = [_project_point(p, projection) for p in line_points]
+                ax.plot([p[0] for p in proj], [p[1] for p in proj], color='gray', linewidth=0.6, alpha=0.6)
+            # v-lines
+            for v_val in (0.0, 0.5, 1.0):
+                line_points = []
+                for u_val in (0.0, 0.25, 0.5, 0.75, 1.0):
+                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'], patch['jor'], patch['kor'], u_val, v_val)
+                    line_points.append((x, y, z))
+                proj = [_project_point(p, projection) for p in line_points]
+                ax.plot([p[0] for p in proj], [p[1] for p in proj], color='black', linewidth=0.6, alpha=0.5)
+
+    # Finalize
+    xl, yl = _axis_labels(projection)
+    ax.set_xlabel(xl)
+    ax.set_ylabel(yl)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.25)
+    ax.set_title(f"All entities: {len(cons_names)} CONS, {len(surf_names)} SURF ({projection})")
+    plt.show()
+
+# (FACE triangulation helpers removed)
 
 def plot_entity_data(model, idx, name):
     """Plot the raw data/parameters of an entity (e.g., order and coefficients for CURVE)."""
