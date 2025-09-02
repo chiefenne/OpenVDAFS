@@ -12,14 +12,18 @@ A Python library and CLI for reading, parsing, inspecting, and visualizing VDA�
 - Entity support:
   - `CURVE` (multi-segment parametric, monomial basis)
   - `POINT`, `PSET`, `MDI` (point data)
-  - `SURF` (parametric surfaces; wireframe visualization)
-  - `CONS` and `FACE` decoding for dependency traversal and export (no FACE visualization)
+  - `SURF` (parametric surfaces; wireframe visualization with adjustable density)
+  - `CONS` and `FACE` decoding; FACE p-curves can be visualized in SURF (s,t) space and exported to CSV (no 3D FACE triangulation)
 - CLI for listing, plotting, and exporting
 - Visualization:
   - Plot a single entity by name (`CURVE`, `POINT`/`PSET`/`MDI`)
   - Plot all: draw all `CONS` (via their referenced `CURVE`s) and `SURF` wireframes in one view
+  - Plot a `FACE` in the SURF parameter plane (s,t), including SURF grid, p-curves, and annotations
   - Multiple projections: `xy`, `yz`, `xz`, `iso`
 - Inspection: Print detailed entity data (orders, parameters, coefficients)
+- Exports:
+  - Export two FACEs (and dependencies) to minimal VDA files
+  - Export FACE loops as CSV in SURF (s,t); includes a standalone CSV plotter under `tools/`
 
 ### 🔄 Planned Features
 
@@ -60,6 +64,12 @@ The CLI provides listing, plotting, and export utilities.
 - `--plot-data NAME` — print detailed, textual entity data to the terminal
 - `--export-faces FACE1 FACE2` — export two `FACE`s with their dependencies to separate `.vda` files
 - `--out-dir DIR` — output directory for exports (default: `./exports`)
+- `--surf-iso-lines N` — number of equally spaced iso-lines per parameter direction for SURF wireframe (default: 3)
+- `--surf-line-samples M` — samples along each iso-line for SURF wireframe (default: 5)
+- `--plot-face-uv FACE` — plot a FACE in the SURF (s,t) parameter plane
+- `--pcurve-samples K` — samples per CONS p-curve segment in (s,t) (default: 50)
+- `--no-midlines` — hide local midlines (u=0.5/v=0.5 per patch) in the UV plot
+- `--export-face-uv-loops FACE` — export FACE loops as CSV files in SURF (s,t); see section below
 
 #### List entities by type
 
@@ -87,6 +97,9 @@ python cli.py file.vda --plot CV3 -p iso
 
 # Plot all CONS (via referenced CURVEs) and SURF wireframes in one view
 python cli.py file.vda --plot-all -p xz
+
+# Control SURF wireframe density
+python cli.py file.vda --plot SF1 --surf-iso-lines 5 --surf-line-samples 9
 ```
 
 #### Inspect entity data (text)
@@ -111,6 +124,55 @@ python -m tools.check_surf_continuity examples/SURF_FLAE0001.vda
 
 # Diagnose SURF evaluation variants (dev/experimental)
 python -m tools.diagnose_surf_encoding examples/SURF_FLAE0001.vda
+```
+
+#### Plot a FACE in the SURF (s,t) plane
+
+Use the deterministic UV debug plot to see a FACE’s p-curves (CONS) in the SURF’s parameter domain. The SURF’s global parameter box [smin,smax]×[tmin,tmax] is used for axes; p-curves are evaluated in their local [0,1] and mapped affinely into this box. FACE endpoints (curve parameters) are marked; each p-curve segment is annotated with its underlying CURVE parameter interval [t0, t1].
+
+```bash
+# Plot FACE FA3 in UV with annotations and SURF grid
+python cli.py file.vda --plot-face-uv FA3
+
+# Increase p-curve sampling, hide per-patch midlines
+python cli.py file.vda --plot-face-uv FA3 --pcurve-samples 100 --no-midlines
+```
+
+#### Export FACE loops as SURF (s,t) CSV
+
+Writes one CSV per loop with header comments and a `s,t` column header. Duplicate points at CONS junctions are skipped, and a closing duplicate is removed when equal to the first point.
+
+```bash
+python cli.py file.vda --export-face-uv-loops FA3 --out-dir exports --pcurve-samples 80
+# -> exports/FA3_loop1.csv, exports/FA3_loop2.csv, ...
+```
+
+CSV format:
+
+```text
+# FACE: FA3
+# SURF: SF1
+# loop: 1
+# points: 123
+s,t
+0.12,0.34
+0.125,0.341
+...
+```
+
+#### Plot exported UV loops (standalone tool)
+
+The helper `tools/plot_uv_loops.py` visualizes one or more SURF (s,t) CSVs with different colors. It supports glob patterns, saving, equal aspect, legends, and optional point markers.
+
+```bash
+# Multiple files with a title
+python -m tools.plot_uv_loops exports/FA3_loop*.csv --title "FA3 loops"
+
+# Save without showing a window, disable legend, force equal aspect (default)
+python tools/plot_uv_loops.py exports/*.csv --save out.png --no-show --no-legend
+
+# Draw dots at each sample point
+python -m tools.plot_uv_loops exports/*.csv --markers --marker-size 2.5
 ```
 
 
@@ -181,7 +243,8 @@ OpenVDAFS/
 │   ├── data_print.py   # Textual data inspection utilities
 │   ├── export_faces.py # Write minimal VDA files containing individual FACEs
 │   ├── check_surf_continuity.py
-│   └── diagnose_surf_encoding.py
+│   ├── diagnose_surf_encoding.py
+│   └── plot_uv_loops.py # Plot SURF (s,t) CSV loop files (markers, legends, save)
 └── examples/           # Example VDA-FS files
     ├── CURVE_SP1.vda
     └── SURF_FLAE0001.vda
@@ -198,6 +261,8 @@ OpenVDAFS/
 | POINT       | ✅   | ✅    | ✅        | ✅          |
 | PSET        | ✅   | ✅    | ✅        | ✅          |
 | MDI         | ✅   | ✅    | ✅        | ✅          |
+| CONS        | ✅   | ✅    | ✅ (via CURVE in plot-all) | — |
+| FACE        | ✅   | ✅    | ✅ (UV p-curves) | ✅ (loops→CSV) |
 
 ### Format Versions
 
@@ -247,4 +312,4 @@ MIT License. See `LICENSE` for details.
 
 Current version: 0.1.0-dev
 
-Last updated: August 2025
+Last updated: September 2025
