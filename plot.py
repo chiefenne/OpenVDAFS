@@ -5,6 +5,8 @@ import curve_eval as ce
 import surf_eval as se
 import query as q
 import face_eval as fe
+from typing import List, Tuple, Optional
+import os
 
 def _axis_labels(projection):
     """Return appropriate axis labels for the given projection."""
@@ -87,7 +89,8 @@ def _plot_xyz_points(xyz, title=None, colors=None, segment_labels=None, projecti
     plt.axis('equal')
     plt.show()
 
-def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
+def plot_entity(model, idx, name, samples_per_segment=30, projection='xy',
+                surf_iso_lines=3, surf_line_samples=5):
     e = idx['by_name'].get(name)
     if not e:
         raise KeyError("No such entity: " + name)
@@ -144,30 +147,41 @@ def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
         # Create wireframe by plotting patch boundaries
         # This is a simplified wireframe - just plot some iso-parameter lines
         n_patches = len(surf['patches'])
-        for i, patch in enumerate(surf['patches']):
-            # Sample a few lines across each patch for wireframe visualization
-            for u_val in [0.0, 0.5, 1.0]:
-                line_points = []
-                for v_val in [0.0, 0.25, 0.5, 0.75, 1.0]:
-                    # Evaluate the patch at (u_val, v_val)
-                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'],
-                                               patch['jor'], patch['kor'], u_val, v_val)
-                    line_points.append((x, y, z))
+        # Build equally spaced parameter samples; keep same density for u and v for now
+        def _linspace01(n):
+            n = max(2, int(n))
+            if n == 2:
+                return [0.0, 1.0]
+            step = 1.0 / float(n - 1)
+            return [i * step for i in range(n)]
 
-                # Project and plot this line
+        iso_vals = _linspace01(surf_iso_lines)
+        samp_vals = _linspace01(surf_line_samples)
+
+        for i, patch in enumerate(surf['patches']):
+            # u-direction iso-lines (vary v along line)
+            for u_val in iso_vals:
+                line_points = []
+                for v_val in samp_vals:
+                    x, y, z = se._eval_monomial2(
+                        patch['ax'], patch['ay'], patch['az'],
+                        patch['jor'], patch['kor'], u_val, v_val
+                    )
+                    line_points.append((x, y, z))
                 proj = [_project_point(p, projection) for p in line_points]
                 xs = [p[0] for p in proj]
                 ys = [p[1] for p in proj]
                 plt.plot(xs, ys, color='gray', linewidth=0.8)
 
-            # Plot v-direction lines
-            for v_val in [0.0, 0.5, 1.0]:
+            # v-direction iso-lines (vary u along line)
+            for v_val in iso_vals:
                 line_points = []
-                for u_val in [0.0, 0.25, 0.5, 0.75, 1.0]:
-                    x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'],
-                                               patch['jor'], patch['kor'], u_val, v_val)
+                for u_val in samp_vals:
+                    x, y, z = se._eval_monomial2(
+                        patch['ax'], patch['ay'], patch['az'],
+                        patch['jor'], patch['kor'], u_val, v_val
+                    )
                     line_points.append((x, y, z))
-
                 proj = [_project_point(p, projection) for p in line_points]
                 xs = [p[0] for p in proj]
                 ys = [p[1] for p in proj]
@@ -183,14 +197,15 @@ def plot_entity(model, idx, name, samples_per_segment=30, projection='xy'):
 
     raise NotImplementedError(f"Plotting for entity type '{cmd}' is not implemented.")
 
-def plot_all(model, idx, projection='xy', samples_per_segment=30):
+def plot_all(model, idx, projection='xy', samples_per_segment=30,
+             surf_iso_lines=3, surf_line_samples=5):
     """
     Plot all CONS (as their referenced 3D CURVEs) and SURF entities in one figure.
     """
     cons_names = q.list_names_by_type(idx, 'CONS')
     surf_names = q.list_names_by_type(idx, 'SURF')
 
-    plt.figure()
+    plt.figure(figsize=(16, 10))
     ax = plt.gca()
 
     # Draw CONS by sampling their referenced CURVEs in 3D
@@ -225,6 +240,16 @@ def plot_all(model, idx, projection='xy', samples_per_segment=30):
         ax.plot([p[0] for p in proj], [p[1] for p in proj], linewidth=1.4, alpha=0.95)
 
     # Draw SURF wireframes
+    def _linspace01(n):
+        n = max(2, int(n))
+        if n == 2:
+            return [0.0, 1.0]
+        step = 1.0 / float(n - 1)
+        return [i * step for i in range(n)]
+
+    iso_vals = _linspace01(surf_iso_lines)
+    samp_vals = _linspace01(surf_line_samples)
+
     for sname in surf_names:
         e = q.get_entity(idx, sname)
         try:
@@ -233,17 +258,17 @@ def plot_all(model, idx, projection='xy', samples_per_segment=30):
             continue
         for patch in surf.get('patches', []):
             # u-lines
-            for u_val in (0.0, 0.5, 1.0):
+            for u_val in iso_vals:
                 line_points = []
-                for v_val in (0.0, 0.25, 0.5, 0.75, 1.0):
+                for v_val in samp_vals:
                     x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'], patch['jor'], patch['kor'], u_val, v_val)
                     line_points.append((x, y, z))
                 proj = [_project_point(p, projection) for p in line_points]
                 ax.plot([p[0] for p in proj], [p[1] for p in proj], color='gray', linewidth=0.6, alpha=0.6)
             # v-lines
-            for v_val in (0.0, 0.5, 1.0):
+            for v_val in iso_vals:
                 line_points = []
-                for u_val in (0.0, 0.25, 0.5, 0.75, 1.0):
+                for u_val in samp_vals:
                     x, y, z = se._eval_monomial2(patch['ax'], patch['ay'], patch['az'], patch['jor'], patch['kor'], u_val, v_val)
                     line_points.append((x, y, z))
                 proj = [_project_point(p, projection) for p in line_points]
@@ -255,6 +280,8 @@ def plot_all(model, idx, projection='xy', samples_per_segment=30):
     ax.set_ylabel(yl)
     ax.set_aspect('equal', adjustable='box')
     ax.set_title(f"All entities: {len(cons_names)} CONS, {len(surf_names)} SURF ({projection})")
+    # make axis equal
+    ax.set_box_aspect(1)  # aspect ratio 1:1
     plt.show()
 
 # (FACE triangulation helpers removed)
@@ -363,9 +390,287 @@ def _plot_surf_data(entity):
     """Plot surface parameter data."""
     params = entity.get('params', [])
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(16, 10))
     plt.bar(range(len(params)), params, color='purple', alpha=0.7)
     plt.title(f"SURF Parameters: {entity['name']}")
     plt.xlabel("Parameter Index")
     plt.ylabel("Parameter Value")
     plt.show()
+
+
+# --- FACE UV-plane plotting for debugging ---
+
+def _eval_monomial1(coeffs: List[float], order: int, u: float) -> float:
+    """Evaluate a 1D monomial series sum_{j=0..order-1} coeffs[j] * u^j."""
+    if order <= 0:
+        return 0.0
+    up = 1.0
+    acc = 0.0
+    for j in range(order):
+        if j == 0:
+            up = 1.0
+        elif j == 1:
+            up = u
+        else:
+            up *= u
+        acc += coeffs[j] * up
+    return acc
+
+def _sample_pcurve(pc: Optional[dict], samples_per_segment: int = 50) -> List[Tuple[float, float]]:
+    """Sample a p-curve mapping (s(u), t(u)) across its segments, returning (s,t) points.
+
+    pc layout (from fe.decode_cons_entity):
+      {'n': n, 'pars': [...], 'segments': [ {'order':K, 'as': [...], 'at': [...], 't0': ..., 't1': ...}, ... ]}
+    """
+    if not pc or not pc.get('segments'):
+        return []
+    pts: List[Tuple[float, float]] = []
+    n = pc.get('n', 0)
+    for i, seg in enumerate(pc['segments']):
+        K = int(seg.get('order', 0))
+        as_coeff = seg.get('as', [])
+        at_coeff = seg.get('at', [])
+        m = max(2, int(samples_per_segment))
+        for k in range(m):
+            u = k / float(m - 1)
+            s = _eval_monomial1(as_coeff, K, u)
+            t = _eval_monomial1(at_coeff, K, u)
+            # avoid duplicate at segment joints except for first
+            if i > 0 and k == 0 and pts:
+                continue
+            pts.append((s, t))
+    return pts
+
+def _eval_pcurve_at_t(pc: Optional[dict], t_value: float) -> Optional[Tuple[float, float]]:
+    """Evaluate p-curve mapping (s,t) at a given underlying curve parameter t_value.
+
+    pc: {'n': n, 'pars': [t0..tn], 'segments': [{order, as, at, ...}, ...]}
+    Returns (s_norm, t_norm) in local [0,1] space or None if not evaluable.
+    """
+    if not pc or not pc.get('segments') or not pc.get('pars'):
+        return None
+    pars = pc['pars']
+    segs = pc['segments']
+    n = len(segs)
+    if n == 0 or len(pars) < n + 1:
+        return None
+    # Clamp t_value to [pars[0], pars[-1]]
+    t0 = pars[0]
+    tN = pars[-1]
+    if tN == t0:
+        return None
+    t = min(max(t_value, t0), tN)
+    # Find segment index k such that pars[k] <= t <= pars[k+1]
+    k = 0
+    for i in range(n):
+        if t <= pars[i+1] or i == n - 1:
+            k = i
+            break
+    a = pars[k]
+    b = pars[k+1]
+    if b == a:
+        u = 0.0
+    else:
+        u = (t - a) / (b - a)
+    seg = segs[k]
+    K = int(seg.get('order', 0))
+    as_coeff = seg.get('as', [])
+    at_coeff = seg.get('at', [])
+    s_norm = _eval_monomial1(as_coeff, K, u)
+    t_norm = _eval_monomial1(at_coeff, K, u)
+    return (s_norm, t_norm)
+
+def plot_face_uv(model, idx, face_name: str, pcurve_samples: int = 50, show_local_midlines: bool = True):
+    """Plot FACE items (CONS pcurves) in the surface parameter domain (s,t).
+
+    - Draw global grid lines using SURF s_pars and t_pars (patch boundaries).
+    - Optionally draw local midlines (u=0.5, v=0.5 within each patch) as hints.
+    - Plot each CONS pcurve in (s,t) using its p-curve mapping (if present).
+    - Mark FACE-provided (u,v) anchor points for each item.
+    """
+    eface = idx['by_name'].get(face_name)
+    if not eface or eface.get('command') != 'FACE':
+        raise KeyError(f"No such FACE: {face_name}")
+
+    f = fe.decode_face_entity(eface)
+    sref = f.get('surf')
+    esurf = q.get_entity(idx, sref)
+    if not esurf:
+        raise KeyError(f"FACE {face_name}: SURF {sref} not found")
+    surf = se.decode_surf_entity(esurf)
+
+    s_pars = surf.get('s_pars', [])
+    t_pars = surf.get('t_pars', [])
+    smin = s_pars[0] if s_pars else 0.0
+    smax = s_pars[-1] if s_pars else 1.0
+    tmin = t_pars[0] if t_pars else 0.0
+    tmax = t_pars[-1] if t_pars else 1.0
+
+    plt.figure(figsize=(10, 8))
+    ax = plt.gca()
+
+    # Global grid (patch boundaries)
+    if s_pars and t_pars:
+        for s in s_pars:
+            ax.plot([s, s], [tmin, tmax], color='lightgray', linewidth=1.0)
+        for t in t_pars:
+            ax.plot([smin, smax], [t, t], color='lightgray', linewidth=1.0)
+
+        # Local midlines per patch (u=0.5 / v=0.5)
+        if show_local_midlines:
+            for i in range(len(s_pars) - 1):
+                smid = 0.5 * (s_pars[i] + s_pars[i + 1])
+                ax.plot([smid, smid], [tmin, tmax], color='silver', linewidth=0.6, linestyle='--', alpha=0.7)
+            for j in range(len(t_pars) - 1):
+                tmid = 0.5 * (t_pars[j] + t_pars[j + 1])
+                ax.plot([smin, smax], [tmid, tmid], color='silver', linewidth=0.6, linestyle='--', alpha=0.7)
+
+    # Color palette for loops/items
+    colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+
+    # Plot each loop's items
+    loop_idx = 0
+    for loop in f.get('loops', []) or []:
+        for item_idx, item in enumerate(loop.get('items', []) or []):
+            cons_ref = item.get('cons')
+            color = colors[(loop_idx + item_idx) % len(colors)]
+            if cons_ref:
+                econs = q.get_entity(idx, cons_ref)
+                if econs:
+                    cons = fe.decode_cons_entity(econs)
+                    pc = cons.get('pc')
+                    pts = _sample_pcurve(pc, pcurve_samples)
+                    # Deterministically map local [0,1] p-curve params to global SURF parameters
+                    if pts:
+                        xs = [smin + p[0] * (smax - smin) for p in pts]
+                        ys = [tmin + p[1] * (tmax - tmin) for p in pts]
+                        ax.plot(xs, ys, color=color, linewidth=1.8, alpha=0.95, label=f"{cons_ref}")
+                    # Annotate underlying CURVE parameter ranges per p-curve segment
+                    if pc and pc.get('pars') and pc.get('segments'):
+                        pars = pc['pars']
+                        segs = pc['segments']
+                        for si in range(min(len(segs), len(pars) - 1)):
+                            ta = float(pars[si]); tb = float(pars[si + 1])
+                            st_a = _eval_pcurve_at_t(pc, ta)
+                            st_b = _eval_pcurve_at_t(pc, tb)
+                            tm = 0.5 * (ta + tb)
+                            st_m = _eval_pcurve_at_t(pc, tm)
+                            if st_a is not None:
+                                ax.plot([smin + st_a[0] * (smax - smin)], [tmin + st_a[1] * (tmax - tmin)],
+                                        marker='o', color=color, markersize=2, alpha=0.9)
+                            if st_b is not None:
+                                ax.plot([smin + st_b[0] * (smax - smin)], [tmin + st_b[1] * (tmax - tmin)],
+                                        marker='o', color=color, markersize=2, alpha=0.9)
+                            if st_m is not None:
+                                mx = smin + st_m[0] * (smax - smin)
+                                my = tmin + st_m[1] * (tmax - tmin)
+                                ax.text(mx, my, f" [{ta:.3g},{tb:.3g}]", fontsize=7, color=color,
+                                        va='bottom', ha='left', alpha=0.9)
+                    # Plot FACE-provided endpoints as markers by evaluating p-curve at those curve parameters
+                    if 'u' in item and 'v' in item:
+                        for t_val in (float(item['u']), float(item['v'])):
+                            st_local = _eval_pcurve_at_t(pc, t_val)
+                            if st_local is None:
+                                continue
+                            sx = smin + st_local[0] * (smax - smin)
+                            ty = tmin + st_local[1] * (tmax - tmin)
+                            ax.plot([sx], [ty], marker='o', color=color, markersize=3)
+                        # Label near the first endpoint
+                        st0 = _eval_pcurve_at_t(pc, float(item['u']))
+                        if st0 is not None:
+                            sx0 = smin + st0[0] * (smax - smin)
+                            ty0 = tmin + st0[1] * (tmax - tmin)
+                            ax.text(sx0, ty0, f" {cons_ref}", fontsize=8, color=color, va='bottom', ha='left')
+        loop_idx += 1
+
+    # Fix axes to global parameter box
+    ax.set_xlim(smin, smax)
+    ax.set_ylim(tmin, tmax)
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlabel('s (global)')
+    ax.set_ylabel('t (global)')
+    ax.set_title(f"FACE {face_name} in parameter space (s,t)")
+    # Avoid crowded duplicate labels
+    handles, labels = ax.get_legend_handles_labels()
+    if labels:
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), loc='best', fontsize=8)
+    plt.show()
+
+
+def export_face_uv_loops(model, idx, face_name: str, out_dir: str, pcurve_samples: int = 50, eps: float = 1e-9) -> List[str]:
+    """Export each FACE loop as a CSV of SURF (s,t) points.
+
+    Rules for duplicate handling within a loop L of CONSs [C0, C1, ..., Ck-1]:
+      - For C0: include all sampled points.
+      - For Ci (i>0): skip the first sampled point (to avoid duplicating the previous end).
+      - After concatenating all points, if last point equals first (within eps), drop the last.
+
+    Returns list of written file paths.
+    """
+    eface = idx['by_name'].get(face_name)
+    if not eface or eface.get('command') != 'FACE':
+        raise KeyError(f"No such FACE: {face_name}")
+
+    f = fe.decode_face_entity(eface)
+    sref = f.get('surf')
+    esurf = q.get_entity(idx, sref)
+    if not esurf:
+        raise KeyError(f"FACE {face_name}: SURF {sref} not found")
+    surf = se.decode_surf_entity(esurf)
+
+    s_pars = surf.get('s_pars', [])
+    t_pars = surf.get('t_pars', [])
+    smin = s_pars[0] if s_pars else 0.0
+    smax = s_pars[-1] if s_pars else 1.0
+    tmin = t_pars[0] if t_pars else 0.0
+    tmax = t_pars[-1] if t_pars else 1.0
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    written: List[str] = []
+    loops = f.get('loops', []) or []
+    for li, loop in enumerate(loops, start=1):
+        loop_pts: List[Tuple[float, float]] = []
+        items = loop.get('items', []) or []
+        for ci, item in enumerate(items):
+            cons_ref = item.get('cons')
+            if not cons_ref:
+                continue
+            econs = q.get_entity(idx, cons_ref)
+            if not econs:
+                continue
+            try:
+                cons = fe.decode_cons_entity(econs)
+            except Exception:
+                continue
+            pc = cons.get('pc')
+            pts_local = _sample_pcurve(pc, pcurve_samples)
+            if not pts_local:
+                continue
+            # Map to global SURF params
+            pts = [(smin + s * (smax - smin), tmin + t * (tmax - tmin)) for (s, t) in pts_local]
+            # Skip first point for all but the first CONS in loop
+            if ci > 0 and len(pts) > 0:
+                pts = pts[1:]
+            loop_pts.extend(pts)
+
+        # Close-loop duplicate suppression: drop last if equals first (within eps)
+        if len(loop_pts) >= 2:
+            if abs(loop_pts[-1][0] - loop_pts[0][0]) <= eps and abs(loop_pts[-1][1] - loop_pts[0][1]) <= eps:
+                loop_pts = loop_pts[:-1]
+
+        # Write CSV
+        if loop_pts:
+            path = os.path.join(out_dir, f"{face_name}_loop{li}.csv")
+            with open(path, 'w', encoding='utf-8', newline='') as fh:
+                fh.write(f"# FACE: {face_name}\n")
+                fh.write(f"# SURF: {sref}\n")
+                fh.write(f"# loop: {li}\n")
+                fh.write(f"# points: {len(loop_pts)}\n")
+                fh.write("s,t\n")
+                for (sx, ty) in loop_pts:
+                    fh.write(f"{sx:.17g},{ty:.17g}\n")
+            written.append(path)
+
+    return written
