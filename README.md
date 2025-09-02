@@ -24,6 +24,7 @@ A Python library and CLI for reading, parsing, inspecting, and visualizing VDA�
 - Exports:
   - Export two FACEs (and dependencies) to minimal VDA files
   - Export FACE loops as CSV in SURF (s,t); includes a standalone CSV plotter under `tools/`
+- Utilities (tools/): standalone polygon triangulation demo (outer + holes) with optional plotting
 
 ### 🔄 Planned Features
 
@@ -175,6 +176,42 @@ python tools/plot_uv_loops.py exports/*.csv --save out.png --no-show --no-legend
 python -m tools.plot_uv_loops exports/*.csv --markers --marker-size 2.5
 ```
 
+#### Triangulate polygons (standalone tool)
+
+A small demo tool that triangulates a simple polygon with optional holes. By default it runs built-in demo shapes; you can also provide a JSON file.
+
+Algorithm: ear-clipping style triangulation adapted from D. R. Finley’s public-domain JavaScript sample (see References/Attribution).
+Holes are unified into the outer polygon using a shortest valid connector and then triangulated.
+
+```bash
+# Run all built-in demos (Ohio with/without hole, 7-shape, 6-shape with hole)
+python -m tools.triangulate_polygons
+
+# Run specific demos, with plotting
+python -m tools.triangulate_polygons --demo ohio --demo six-hole --plot
+
+# Triangulate from JSON input (structure shown below)
+python -m tools.triangulate_polygons --input polygon.json --plot
+```
+
+JSON input format:
+
+```json
+{
+  "outer": [[x, y], [x, y], ...],
+  "holes": [
+    [[x, y], [x, y], ...],
+    [[x, y], [x, y], ...]
+  ]
+}
+```
+
+### Notes and limitations
+
+- May fail if the polygon touches itself, is degenerate, or is traced in the wrong direction.
+- Plotting requires matplotlib; omit --plot if you don’t have it installed.
+
+
 
 ### Example Output
 
@@ -244,7 +281,8 @@ OpenVDAFS/
 │   ├── export_faces.py # Write minimal VDA files containing individual FACEs
 │   ├── check_surf_continuity.py
 │   ├── diagnose_surf_encoding.py
-│   └── plot_uv_loops.py # Plot SURF (s,t) CSV loop files (markers, legends, save)
+│   ├── plot_uv_loops.py # Plot SURF (s,t) CSV loop files (markers, legends, save)
+│   └── triangulate_polygons.py # Standalone polygon triangulation demo (outer + holes; optional plotting)
 └── examples/           # Example VDA-FS files
     ├── CURVE_SP1.vda
     └── SURF_FLAE0001.vda
