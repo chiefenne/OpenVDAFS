@@ -183,6 +183,8 @@ A small demo tool that triangulates a simple polygon with optional holes. By def
 Algorithm: ear-clipping style triangulation adapted from D. R. Finley’s public-domain JavaScript sample (see References/Attribution).
 Holes are unified into the outer polygon using a shortest valid connector and then triangulated.
 
+Intended use in this project: triangulate one or more CONS loops in the SURF (s,t) plane as exported by “Export FACE loops as SURF (s,t) CSV” (via `--export-face-uv-loops`). You can preview those CSVs with `tools/plot_uv_loops.py`.
+
 ```bash
 # Run all built-in demos (Ohio with/without hole, 7-shape, 6-shape with hole)
 python -m tools.triangulate_polygons
