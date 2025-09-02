@@ -345,6 +345,7 @@ MIT License. See `LICENSE` for details.
 
 - DIN 66301: VDA-FS Format Specification
 - VDA (Verband der Automobilindustrie) Standards
+- Polygon triangulation algorithm by D. R. Finley (public domain), embedded as JavaScript in the website code: [alienryderflex.com/triangulation](https://alienryderflex.com/triangulation/)
 
 ## Status
 
