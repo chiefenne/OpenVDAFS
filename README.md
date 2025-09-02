@@ -209,21 +209,6 @@ Valid example:
 }
 ```
 
-Schema (annotated):
-
-```jsonc
-{
-  // Required: closed outer loop as [x, y] points
-  "outer": [[x, y], [x, y], ...],
-
-  // Optional: list of closed inner loops (holes), each as [x, y] points
-  "holes": [
-    [[x, y], [x, y], ...],
-    ...
-  ]
-}
-```
-
 ### Notes and limitations
 
 - May fail if the polygon touches itself, is degenerate, or is traced in the wrong direction.
