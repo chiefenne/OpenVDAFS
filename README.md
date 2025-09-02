@@ -198,12 +198,28 @@ python -m tools.triangulate_polygons --input polygon.json --plot
 
 JSON input format:
 
+Valid example:
+
 ```json
 {
+  "outer": [[0, 0], [5, 0], [5, 4], [0, 4]],
+  "holes": [
+    [[1, 1], [2, 1], [2, 2], [1, 2]]
+  ]
+}
+```
+
+Schema (annotated):
+
+```jsonc
+{
+  // Required: closed outer loop as [x, y] points
   "outer": [[x, y], [x, y], ...],
+
+  // Optional: list of closed inner loops (holes), each as [x, y] points
   "holes": [
     [[x, y], [x, y], ...],
-    [[x, y], [x, y], ...]
+    ...
   ]
 }
 ```
